@@ -20,12 +20,10 @@ type of data
 ##### install elasticsearch
 
 ```bash
-rpm -ivh elastic
+rpm -ivh elastic-8.10.4-x86_64.rmp
 ```
 
 > [!NOTE]
 >
-> ```text
-> After installation, it shows information about the user and password, as well as information about token creation and password recovery
-> ```
+> After installation, it shows information about the user and password, as well as information about token\n creation and password recovery
 
