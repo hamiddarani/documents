@@ -172,7 +172,7 @@ rpm -ivh logstash-8.10.4-x86_64.rpm
 ```
 
 ```bash
-nano beat.cong
+nano beat.conf
 input {
 	beats {
 		port => 5044
@@ -219,5 +219,48 @@ output.elasticsearch:
 #uncomment   
 output.logstash:
   hosts: ["localhost:5044"]
+```
+
+------
+
+![](filebeat-logstash.png)
+
+filebeat component:
+
+- inputs
+- harvester(is a process in background that watch your input file)
+
+`/etc/filebeat/filebeat.yml`
+
+```yaml
+filebeat.inputs:
+  - type: filestream
+    enabled: true
+    paths: # log file path
+      - /var/log/*.log
+    exclude_lines: ["^DBG"] # filter logs
+    include_lines: ["^ERR","^WARN"] # filter logs
+    exclue_files: [".gz$"] # don't read this files
+    fields: # if we're gonna set module manually
+      apache: true
+```
+
+`scanner option`
+
+```yaml
+close_renamed: closes files that are renamed or deleted while they are being monitored.
+scan_frequency: specifies how ofen filebeat checks the directories for new files.
+backoff: specifies the initial backoff time between scans, which increases exponentially with each subsequent scan failure.
+max_backoff: specifies the maximum backoff time between scans.
+spool_size: specifies the number of events to buffer before they are written to the output.
+```
+
+```yaml
+filebeat.inputs:
+  type: filestream
+  paths:
+    - /var/log/*
+  prospector.sccaner.exclude_files: ['\.gz$'] #scanner don't read this files
+  prospector.scanner.include_files: ['^/var/log/.'] #scanner read this files
 ```
 
