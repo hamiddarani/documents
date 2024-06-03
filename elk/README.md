@@ -108,3 +108,116 @@ elasticsearch.fleet.outputs #comment
 
 ------
 
+`/etc/filebeat/filebeat.yml`
+
+```yaml
+filebeat.inputs:
+  - type: filestream # type of input for collecting logs from file
+	enable: true
+	paths:
+  	  - /root/logs/order-bulk.json
+output.elasticsearch:
+  hosts: ["localhost:9200"]
+  username: "elasticsearch-user"
+  passward: "elasticsearch-password"
+
+```
+
+```bash
+systemctl start filebeat.service
+systemctl enable filebeat.service
+systemctl status filebeat.service
+```
+
+> [!NOTE]
+>
+> kibana browser `Menu > Management > Stack Management`
+>
+> In `Data > Index Management` , we manage indexes 
+>
+> In the `Data Stream` tab, it identifies the filebeat
+>
+> change `include hidden indices` state to show hidden indices
+>
+> In `Management > Stack Management > Data Views` , To see the indices, we must first create a Data View
+>
+> In `Menu > Analysis > Discover` we can see our data views
+
+> [!WARNING]
+>
+> If we don't parse the data, it will dump all the data in the message field
+
+‍‍‍‍‍In order to see the logs and monitor at a moment's notice, we must refer to ‍‍‍‍`Observability > Logs > Stream` 
+
+‍‍‍‍
+
+------
+
+##### Install Logstash
+
+`/var/lib/filebeat/registry`
+
+It keeps the status of the files read by the filebeat , `rm -rf /var/lib/filebeat/*`
+
+```bash
+rpm -ivh logstash-8.10.4-x86_64.rpm
+```
+
+`/etc/logstash/`
+
+```bash
+/etc/logstash/logstash.yml # there is nothing to change
+/etc/logstash/conf.d/ # default path to write piplines
+/etc/logstash/pipelines.yml # path.config: "/etc/logstash/conf.d/*.conf"
+```
+
+```bash
+nano beat.cong
+input {
+	beats {
+		port => 5044
+	}
+}
+
+filter {
+	json {
+		source => message
+	}
+	date {
+		match => ["purchased_at", "ISO8601"]
+		target => "@timestamp"
+		timezone => "Asia/Tehran"
+	}
+}
+
+output {
+	elasticsearch {
+		hosts => ["localhost:9200"]
+        index => "hamid-%{+YYYY.MM.dd}"
+        user => "elastic-user"
+        password => "elastic-password"
+	}
+}
+```
+
+```bash
+systemctl start logstash.service
+systemctl enable logstash.service
+systemctl status logstash.service
+```
+
+```tex
+debug logstash -> /var/log/logstash
+```
+
+`/etc/filebeat/filebeat.yml`
+
+```yaml
+#comment
+output.elasticsearch:
+  ...
+#uncomment   
+output.logstash:
+  hosts: ["localhost:5044"]
+```
+
