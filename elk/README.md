@@ -262,5 +262,104 @@ filebeat.inputs:
     - /var/log/*
   prospector.sccaner.exclude_files: ['\.gz$'] #scanner don't read this files
   prospector.scanner.include_files: ['^/var/log/.'] #scanner read this files
+  prospector.scanner.check_interval: 10s # filebeat check for new file
+```
+
+------
+
+`/etc/elasticsearch/elasticsearch.yml`
+
+```yaml
+bootstrap.memory_lock: true # swap off
+```
+
+`/etc/elsaticsearch/jvm.options`
+
+```tex
+# elasticsearch resource option
+```
+
+`Kibana > Menu > Stack Management > Index Lifecycle Management > Edit Policy`
+
+```tex
+# for closing old indices harvester processes
+```
+
+##### Monitoring
+
+`Menu > Mangment > Monitoring Stack`
+
+You can monitor with two methods:
+
+- Metric beat (In `integration` you can see the list of products that can integrate with metric. `example docker`)
+- kibana stack
+
+**when you enable a module on filebeat, you can't use paths for collecting  logs** 
+
+```bash
+sudo filebeat modules enable audit 
+```
+
+------
+
+**Redis**
+
+redis uses instead of spooler as queue.
+
+`filebeat > spooler || filebeat > redis`
+
+```bash
+rpm -ivh redis
+sysytemctl stop filebeat.service
+systemctl stop logstash.service
+```
+
+`/etc/filebeat/filebeat.yml`
+
+```yaml
+output.elasticsearch: #comment
+output.redis:
+  hosts: ["localhost:6379"]
+  key: filebeat #uniqe key for queue
+  db: 0
+  timeout: 5
+```
+
+`/etc/logstash/conf.d/beat.conf`
+
+```tex
+input {
+	redis {
+		host => "127.0.0.1"
+		key => "filebeat"
+		data_type => "list"
+	}
+}
+
+filter {
+	json {
+		source => message
+	}
+	date {
+		match => ["purchased_at", "ISO8601"]
+		target => "@timestamp"
+		timezone => "Asia/Tehran"
+	}
+}
+
+output {
+	elasticsearch {
+		hosts => ["localhost:9200"]
+        index => "hamid-%{+YYYY.MM.dd}"
+        user => "elastic-user"
+        password => "elastic-password"
+	}
+}
+```
+
+```bash
+sysytemctl status redis.service
+systemctl start filebeat.service
+systemctl start logstash.service
 ```
 
