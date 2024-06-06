@@ -363,3 +363,78 @@ systemctl start filebeat.service
 systemctl start logstash.service
 ```
 
+------
+
+**Grok**
+
+`Management > Dev Tools > Grok Debugger`
+
+```json
+13:10:00.080 app1[3965987]: IN[1]PR[156481]ORD[46541]STR[544984]AV[5463213]SO[5464654]A[0]
+%{DATA:time} %{DATA:driver}\[%{NUMBER:proc}\]: %{DATA:dir}\[%{NUMBER:msgtype}\]PR\[%{NUMBER:product}\]ORD\[%{NUMbER:order}\]%{GREEDYDATA:org-msg}
+
+output:
+{
+	"time": "13:10:00.080",
+    "driver": "app1",
+    "proc": "3965987",
+    "dir": "IN",
+    "msgtype": "1",
+    "product": "46541",
+    "order": "46541",
+	"org-msg": "STR[544984]AV[5463213]SO[5464654]A[0]"
+}
+
+
+%{DATA:time} %{DATA:driver}\[%{NUMBER:proc}\]: %{DATA:dir}%{GREEDYDATA:org-msg}
+output:
+{
+	"time": "13:10:00.080",
+    "driver": "app1",
+    "proc": "3965987",
+    "dir": "",
+	"org-msg": "IN[1]PR[156481]ORD[46541]STR[544984]AV[5463213]SO[5464654]A[0]"
+}
+```
+
+```bash
+systemctl stop logstash.service
+sysytemctl stop filebeat.service
+
+/etc/logstash/conf.d/grok.conf
+
+input {
+	file {
+		path => "/tmp/*.log"
+		type => "log"
+		start_position => "beginning"
+		sincedb_path => "/dev/null"
+	}
+}
+
+filter {
+	grok {
+		match => {"message" => "%{DATA:time} %{GREEDYDATA:org-msg}"}
+		add_field {
+			"dt" => "%{YYYY-MM-dd} %{time}"
+		}
+	}
+	date {
+		match => ["dt", "yyyy-MM-dd HH:mm:ss:SSS", "ISO8601"]
+		target => "@timestamp"
+		timezone => "Asia/Tehran"
+	}
+}
+
+output {
+	elasticsearch {
+		hosts => ["localhost:9200"]
+        	index => "hamid-%{+YYYY.MM.dd}"
+        	user => "elastic-user"
+        	password => "elastic-password"
+	}
+}
+```
+
+------
+
