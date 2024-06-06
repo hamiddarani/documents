@@ -395,6 +395,8 @@ output:
     "dir": "",
 	"org-msg": "IN[1]PR[156481]ORD[46541]STR[544984]AV[5463213]SO[5464654]A[0]"
 }
+# correct
+%{DATA:time} %{DATA:driver}\[%{NUMBER:proc}\]: %{WORD:dir}%{GREEDYDATA:org-msg}
 ```
 
 ```bash
@@ -416,7 +418,7 @@ filter {
 	grok {
 		match => {"message" => "%{DATA:time} %{GREEDYDATA:org-msg}"}
 		add_field {
-			"dt" => "%{YYYY-MM-dd} %{time}"
+			"dt" => "%{+YYYY-MM-dd} %{time}"
 		}
 	}
 	date {
@@ -435,6 +437,55 @@ output {
 	}
 }
 ```
+
+```yaml
+# filebeat > redis > grok > elasticsearch
+
+# /etc/filebeat/filebeat.yml
+filebeat.inputs:
+  paths:
+    - /root/logs/order.log
+output.redis:
+  hosts: ["localhost:6379"]
+  key: "filebeat"
+  enabled: true
+  db: 0
+  timeout: 5
+  data_type: "list"
+# /etc/logstash/conf.d/grok.conf
+input {
+	redis {
+		host => "localhost"
+		key => "filebet"
+		data_type => "list"
+	}
+}
+
+filter {
+	grok {
+		match => {"message" => "%{DATA:time} %{GREEDYDATA:org-msg}"}
+		add_field {
+			"dt" => "%{+YYYY-MM-dd} %{time}"
+		}
+	}
+	date {
+		match => ["dt", "yyyy-MM-dd HH:mm:ss:SSS", "ISO8601"]
+		target => "@timestamp"
+		timezone => "Asia/Tehran"
+	}
+}
+
+output {
+	elasticsearch {
+		hosts => ["localhost:9200"]
+        index => "hamid-%{+YYYY.MM.dd}"
+        user => "elastic-user"
+        password => "elastic-password"
+	}
+}
+```
+
+
 
 ------
 
@@ -491,6 +542,65 @@ aliases
 > To add a policy to an index:
 >
 > `Stack Management > Index Management > Choose index AND Manage Index Button > Add lificycle policy`
+
+------
+
+**Backup Elasticsearch**
+
+> [!IMPORTANT]
+>
+> To get backup:
+>
+> `Stack Mangemenet > Snapshot and Restore`
+>
+> `1.Create a new repository > Shared file system`
+>
+> `2. /etc/elasticsearch/elasticsearch.yml > path.repo: /var/data/elasticsearck/backup`
+>
+> `3. mkdir -p /var/data/elasticsearch/backup`
+>
+> `4.chown -R elasticsearch:elasticsearch /var/data/elasticsearch/backup`
+>
+> `5.chmod 777 /var/data/elasticsearch/backup `
+>
+> `6.systemctl restart elasticsearch.service`
+>
+> `7.Register Repository with location /var/data/elasticsearch/backup`
+>
+> `8.Create policy`
+>
+> `9. Restore policy if you need`
+
+------
+
+**JDBC**
+
+install jdbc plugin
+
+```conf
+# /etc/logstash/conf.d/sql.conf
+input {
+	jdbc {
+		jdbc_driver_library => "/tmp/mssql-jdbc-12.4.2.jre8.jar" # executable jdbc binary path
+		jdbc_driver_class => com.microsoft.sqlserver.jdbs.SQLServerDriver
+		jdbc_connection_string => "jdbc://sqlserver://<database-ip>;databaseName=BURAX;user=hamid;password=hamid;encrypt=false;"
+		jdbc_user => "hamid"
+		jdbc_password => "hamid"
+		statement => "SELECT * FORM ORDER WHERE DateDiff(DD,DocDate,GetDate()) = 0"
+		schedule => "*/1 * * * *" #every minute
+	}
+}
+
+output {
+	elasticsearch {
+		hosts => ["localhost:9200"]
+        index => "hamid-%{+YYYY.MM.dd}"
+        user => "elastic-user"
+        password => "elastic-password"
+	}
+}
+
+```
 
 ------
 
