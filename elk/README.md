@@ -438,3 +438,59 @@ output {
 
 ------
 
+**shard**
+
+`/etc/filebeat/filebeat.yml`
+
+```yaml
+setup.template.settings:
+  index.number_of_shards: 1
+```
+
+`Stack Management > Index Management > Templates > Create template`
+
+```json
+# logistics
+specify name of template
+Add index to index_pattern that are supposed to use this template
+-----------------------------------------------
+# index settings (optional)
+
+{
+	"number_of_shards": 5,
+    "number_of_replicas": 0
+}
+-----------------------------------------------
+# mapping
+Add field and specify the data type
+dynamic template date
+[
+    {
+        "strings_as_keywords": {
+            "match_mapping_type": "string",
+            "mapping": {
+                "type": "keyword"
+            }
+        }
+    }
+]
+-----------------------------------------------
+aliases
+```
+
+`Stack Management > Index Lificycle Policies` (ILM)
+
+3 phase:
+
+- Hot
+- Warm
+- Cold
+
+> [!IMPORTANT]
+>
+> To add a policy to an index:
+>
+> `Stack Management > Index Management > Choose index AND Manage Index Button > Add lificycle policy`
+
+------
+
