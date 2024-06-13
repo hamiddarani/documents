@@ -1,3 +1,5 @@
+[TOC]
+
 **ELK Stack** (elastic.co)
 
 ------
@@ -588,6 +590,10 @@ input {
 		jdbc_password => "hamid"
 		statement => "SELECT * FORM ORDER WHERE DateDiff(DD,DocDate,GetDate()) = 0"
 		schedule => "*/1 * * * *" #every minute
+		tracking_column => "DocDate"
+		tracking_column_type => "timestamp"
+		use_column_value => true
+		last_run_metadata_path => "/tmp"
 	}
 }
 
@@ -603,4 +609,6 @@ output {
 ```
 
 ------
+
+#### Clustering
 
