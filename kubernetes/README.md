@@ -1,7 +1,5 @@
 [TOC]
 
-
-
 # Kubernetes
 
 ## What is kubernetes?
@@ -44,11 +42,11 @@ UID: Every kubernetes object also has a UID that is unique across the whole clus
 
 #### Kubernetes Resources
 
-Workload(Pod, Job, CoronJob, Deployment, ReplicaSet, DaemonSet, ...)
-Service Discover and Load Balancing(Service, Endpoints, Ingress, ...)
-Config and Storage(ConfigMap, Secret, PV, PVC, StorageClass, ...)
-Cluster(Node, Namespace, ResourceQuota, ServiceAccount, Role, ...)
-Metadata(CRD, Event, LimitRange, HPA, VPA, PDB, PSP, ...)
+- Workload(Pod, Job, CoronJob, Deployment, ReplicaSet, DaemonSet, ...)
+- Service Discover and Load Balancing(Service, Endpoints, Ingress, ...)
+- Config and Storage(ConfigMap, Secret, PV, PVC, StorageClass, ...)
+- Cluster(Node, Namespace, ResourceQuota, ServiceAccount, Role, ...)
+- Metadata(CRD, Event, LimitRange, HPA, VPA, PDB, PSP, ...)
 
 #### How to write kubernetes manifest
 
@@ -65,8 +63,19 @@ each manifest includes the following sections:
 you can create objects with these commands
 
 ```bash
-kubectl create -f manifest.yaml
+kubectl create -f manifest.yaml # generate name
 kubectl apply -f manifest.yaml
+```
+
+## Installation
+
+- install kubernetes with k3s (for practicing) https://k3s.io/
+- install kubectl
+- copy `/etc/rancher/k3s/k3s.ym` to `~/.kube/config` or export `KUBECONFIG=path`
+- kubectl completion bash > `/etc/bash_completion.d/kubectl`
+
+```bash
+kubectl get node -o wide
 ```
 
 ## Namespace
@@ -87,7 +96,7 @@ kubectl create namespace test
 
 ## POD
 
-pod is an **atomic** unit of work in kubernetes which consists of **one or more containers** running on kubernetes cluster. kubernetes scheduler guarantees that all **containers of same pod** run on the removed. **Network Infrastructure**, **Storage Resources** and the **Lifecycle** of pod's containers are shared together. 
+pod is an **atomic** unit of work in kubernetes which consists of **one or more containers** running on kubernetes cluster. kubernetes scheduler guarantees that all **containers of same pod** run on the **same worker node**. **Network Infrastructure**, **Storage Resources** and the **Lifecycle** of pod's containers are shared together. 
 
 looking deep at kubernetes pods:
 
@@ -109,7 +118,21 @@ spec:
   containers:
     - name: nginx
       image: nginx:alpine
+      command: ["false"] # CrashLoopBackoff
 ```
+
+```bash
+kubectl get pod/po <pod-name> -n <namespace>
+kubectl describe pod/po <pod-name> -n <namespace>
+```
+
+> [!NOTE]
+>
+> You cannot modify anything related to the container.
+>
+> kubectl delete pod test
+>
+> kubectl apply -f pod.yaml
 
 ## Controllers
 
@@ -173,11 +196,11 @@ spec:
   replica: 3
   selector:
     matchExperssions:
-      key: app.kubernetes.io/name 
-      operator: IN
-      values:
-        - nginx
-        - apache
+      - key: app.kubernetes.io/name 
+        operator: IN
+        values:
+          - nginx
+          - apache
   template:
     metadata:
       labels:
