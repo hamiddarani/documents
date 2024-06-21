@@ -405,3 +405,279 @@ spec:
   externalName: google.com
 ```
 
+## Ingress
+
+```bash
+kubectl get ingressclasses.networking.k8s.io
+kubectl get ingress
+curl -H 'Host: test.hamid.local' <ingress-ip>
+
+/etc/hosts
+<ingres-ip> test.hamid.local
+```
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: <ingress-name>
+spec:
+  tls:
+    hosts:
+      - test.hamid.local
+    secretName: mysite.com.tls
+  ingressClassName: "kubectl get ingressclasses.networking.k8s.io"
+  rules:
+   - host: test.hamid.local
+     http:
+       paths:
+         pathType: exact | prefix | ImplementationSpesific
+         path: /
+         backend:
+           service:
+             name: <service-name>
+             port:
+               number: 80
+```
+
+```bash
+# generate certificate for https
+openssl req -newkey rsa 2048 -nodes -keyout mysite.com.tls -x509 -days 90 -out mysite.com.crt
+
+kubectl create secret tls mysite.com.tls --cert mysite.com.crt --key mysite.co.key
+```
+
+## Container Health Check
+
+list of probes:
+
+- startup probe (It is executed only once at the start of the program to check process health)
+- liveness probe (restart if not ok.)
+- readiness probe (accept traffic or exit from ep. code 200 | 300 is ok.)
+
+type op actions:
+
+- httpGet
+- exec
+- tcpSocket
+- grpc
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <pod-name>
+  labels:
+    app.kubernetes.io/name: <pod-name>
+spec:
+  containers:
+    - name: <container-name>
+      image: <container-image>
+      livenessProbe: # startupProbe | readinessProbe
+        initialDelaySeconds: 15
+        periodSeconds: 3
+        timeoutseconds: 15
+        successThershold: 1
+        failureThershold: 1
+        tcpSocket: # httpGet | exec | grpc
+          port: 443
+        httpGet:
+          host: localhost
+          path: /
+          port: 80
+        exec:
+          command: ["kill", "-0", "1"]
+```
+
+## ConfigMap & Secret
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: <configmap-name>
+data:
+  MYSQL_ROOT_PASSWORD: password
+```
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <secret-name>
+dataString:
+  MYSQL_ROOT_PASSWORD: password
+```
+
+```yaml
+containers:
+  name: mysql
+  image: mysql:8
+  env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: root
+```
+
+```yaml
+containers:
+  name: mysql
+  image: mysql:8
+  env:
+    - name: MYSQL_ROOT_PASSWORD
+      configMapKeyRef: # secretKeyRef
+        name: <configmap-name> # secret-name
+        key: <configmap-key> # secret-key
+```
+
+```yaml
+containers:
+  name: mysql
+  image: mysql:8
+  envFrom:
+    - configMapRef: # secreRef
+        name: <configmap-name> # secret-name
+```
+
+```yaml
+containers:
+  name: mysql
+  image: mysql:8
+  envFrom:
+    - configMapRef:
+        name: <configmap-name>
+  command: ["echo", "$(<configmap-key>)"]
+```
+
+```yaml
+containers:
+  volumeMounths:
+    - name: config
+      mountPath: /config
+volumes:
+  - name: config
+    configMap: # secret
+      name: <configmap-name> # secret-name
+```
+
+```bash
+kubectl create configmap <configmap-name> --form-file=<file-path>
+```
+
+## kubernetes storage and volume
+
+- Container Filesystem >>>>>> container lifetime
+- Pod volume(emptyDir) >>>>>> pod lifetime
+- Persistent volume >>>>>> cluster lifetime
+
+```yaml
+spec:
+  containers:
+    - name: <container-name>
+      image: <image-name>
+      volumeMounts:
+        - name: <volume-name>
+          mountPath: <path>
+  volumes:
+    - name: <volume-name>
+      emptyDir: {}
+    - name: <volume-name>
+      emptyDir: # create a tempfs volume
+        medium: Memory
+    - name: <volume-name>
+      configMap:
+        name: <configmap-name>
+    - name: <volume-name>
+      secret:
+        neme: <secret-name>
+    - name: host
+      hostPath: /
+    - name: nfs
+      nfs: # pod use storage directly
+        server: 192.168.122.39
+        path: /data
+        readOnly: false
+```
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-volume
+  labels:
+    storage.k8s.io/name: nfs
+spec:
+  accessModes:
+    - ReadWriteOnce # fc, iscsi, ...
+    - ReadOnlyMany
+    - ReadWriteMany # nfs, glusterfs cephfs, ...
+  capacity:
+    storage: 10G
+  storageClassName: ""
+  persistentVolumeClaimPolicy: Recycle # Retain,Delete Recycle(deprecated)
+  volumeMode: FileSystem # Block
+  nfs:
+    server: 192.168.122.39
+    path: /data
+    readonly: false
+```
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: <persistent-volume-claim-name>
+spec:
+  storageClass: "" # install by helm (nfs-client)
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1G
+```
+
+```yaml
+spec:
+  containers:
+    - name: <container-name>
+      image: <image-name>
+      volumeMounts:
+        - name: <volume-name>
+          mountPath: <path>
+  volumes:
+    - name: <volume-name>
+      persitentVolumeClaim:
+        claimName: <persistent-volume-claim-name> 
+```
+
+**create nfs**
+
+```bash
+apt update & apy -y upgrade
+apt install -y nfs-server
+mkdir /data
+cat <<EOF  >> /etc/exports
+/data 192.168.122.39(rw,no_subtree_check,no_root_squash)
+/data 127.0.0.1(rw,no_subtree_check,no_root_squash)
+EOF
+systemctl enable --now nfs-server
+exportfs -ar
+
+# on worker node
+apt install nfs-common
+```
+
+**Add storage class and provisioner nfs**
+
+```bash
+helm repo add nfs-subdir-external-provisioner-sigs http://kubernetes-sigs.github.io/nfs-subdir-external-provisioner-sigs --create-namespace --namespcae nfs-provisioner --set nfs-server=192.168.122.39 --set nfs.path=/data
+```
+
+## Install with kubespray
+
+minimum number of machime for production grade:  14
+
+- etcd: 5
+- controller plane: 3
+- haproxy: 2
+- worker node for system component like coreDNS: 2
+- worker node for applications: 2
