@@ -678,6 +678,81 @@ minimum number of machime for production grade:  14
 
 - etcd: 5
 - controller plane: 3
-- haproxy: 2
+- spare node: 2
 - worker node for system component like coreDNS: 2
 - worker node for applications: 2
+
+```bash
+mkdir k8s
+cd k8s
+git clone https://github.com/kubernetes-sigs/kubespray.git
+python -m venv venv
+source venv/bin/activate
+pip install -U pip
+# stable version
+git checkout v2.22.1 -b v2.22.1
+git branch
+# install requirements
+pip install -r requirements.txt
+cd inventory
+cp -rp sample/ mycluster
+cd mycluster
+nano inventory.ini
+```
+
+```ini
+[all]
+node[001:014]cluster.local
+
+[kube_control_plane]
+node[006:008]cluster.local
+
+[etcd]
+node[001:005]cluster.local
+
+[kube_node]
+node[009:014]cluster.local
+
+[calico_rr]
+
+[k8s_cluster:children]
+kube_control_plane
+kube_node
+calico_rr
+```
+
+```bash
+# k8s/kubspray
+# check node connection
+anisble all -i inventory/mycluster/inventory.ini -m ping
+```
+
+```bash
+# k8s/kubespray/inventory/myclustergroup_vars
+# variable retated to groups like all, kube_control_plane, ...
+
+# ls all, etcd.yml, k8s_cluster
+# all: all machine, cloud provider configs, offline.yml, containerd, crio, all.yml
+# etcd.yml: etcd options
+
+# ls k8s_cluster
+# k8s-net-* cni-plugins
+# nano k8s-net-calico.yml
+# nano k8s_cluster.yml
+kube_proxy_strict_arp: true
+kube_secret_encrypt_data: true
+enable_coredns_k8s_external: true
+coredns__k8s_external_zone: kube.b9tcluster.local
+container_manger: containerd
+kubernetes_audit: true
+# addons.yml
+metric_server_enabled: true
+metrics_server_kubelet_preffred_address_type: "InternalIP,ExternalIP,Hostname,InternalDNS,ExternalDNS"
+ingress_nginx_enabled: true
+```
+
+```bash
+# k8s/kubespray
+ansible-playbook -i inventory/mycluster/inventory.ini -b cluster.yml
+```
+
