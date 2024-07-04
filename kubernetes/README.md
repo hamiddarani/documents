@@ -135,6 +135,89 @@ kubectl exec <pod-name> -- <command>
 >
 > kubectl apply -f pod.yaml
 
+### DNS
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <pod-name>
+spec:
+  containers:
+    - name: <container-name>
+      image: <container-image>
+      command: ["nslookup", "test"]
+  dnsConfig:
+    nameservers:
+      - 1.1.1.1
+  dnsPolicy: ClusterFirstWithHostNet # ClusterFirst | Defualt | None
+  hostNetwork: true
+```
+
+### Container Resource
+
+```bash
+kubectl describe node <my-nade>
+kubectl top pod <pod-name>
+kubectl top node
+```
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <pod-name>
+spec:
+  containers:
+    - name: <container-name>
+      image: <container-image>
+      resourses:
+        requests: # The source we want to get from the system
+          cpu: 1 # 1000m (milicore)
+          memory: 256Mi
+        limits: # The system checks whether it exists or not, if 4 GB is available, it uses it, if it exceeds 4 GB, it kills
+          cpu: 1
+          memory: 4G
+```
+
+## QOS
+
+we have 3 types for Quality Of Service
+
+- BestEffort: 
+- Burstable
+- Garanteed
+
+Resources must be defined for **system components** and it is better to be in the **Garanteed Class**.
+
+### Private Registry
+
+```bash
+kubectl create secret docker-registry <secret-name> --form-file=.dockerconfigjson=./.docker/config.json
+```
+
+```yaml
+# usage in pod
+spec:
+  imagePullPolicy:
+    - name: <secret-name>
+```
+
+### Sidecar container
+
+```yaml
+spec:
+  initContainers:
+    - name: <init-container-name>
+      image: <init-container-image>
+      command: ["your command"]
+```
+
+```bash
+kubectl run ephemeral --image=registry.k8s.io/pause:latest --restart=Never
+kubectl debug -it ephemaral --image=busybox:latest --target=nginx
+```
+
 ## Controllers
 
 ### ReplicationController(rc)
@@ -164,7 +247,7 @@ spec:
 
 control the count of pods
 
-equality-base
+**equality-base**
 
 ```yaml
 apiVersion: v1 
@@ -186,7 +269,7 @@ spec:
           image: nginx:alpine
 ```
 
-set-base
+**set-base**
 
 ```yaml
 apiVersion: v1 
@@ -756,3 +839,62 @@ ingress_nginx_enabled: true
 ansible-playbook -i inventory/mycluster/inventory.ini -b cluster.yml
 ```
 
+## Job
+
+**backoffLimit**: It tries 3 times to do the job
+
+**ttlSecondsAfterFinished**: After the specified period of time, if the job is done correctly, it will delete the job and related pods. If it encounters an error, it will not be deleted because we need job's logs.
+
+**suspend**: it suspends job.
+
+**parallelism**: Runs three pods together.
+
+**completions**: It must be done correctly three times to finish the job correctly.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: <job-name>
+spec:
+  backoffLimit: 3 
+  ttlSecondsAfterFinished: 30
+  suspend: yes
+  parallelism: 3
+  completions: 3
+  template:
+  	restartPolicy: Never # Never or OnFailure
+    spec:
+      containers:
+        - name: <container-name>
+          image: <container-image>
+          command: ["command"]
+```
+
+## CronJob
+
+**concurrencyPolicy**: If a job was running, would it allow a new job to run or not?
+
+**schedule**: It is based on **kube-controller-manager** time
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: <cronjob-name>
+spec:
+  timezone: Asia/Tehran
+  schedule: "* * * * *" 
+  concurencyPolicy: Allow
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      completion: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: <container-name>
+              image: <container-image>
+              command: ["your command"]
+```
