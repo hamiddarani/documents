@@ -180,7 +180,7 @@ spec:
           memory: 4G
 ```
 
-## QOS
+### QOS
 
 we have 3 types for Quality Of Service
 
@@ -206,6 +206,34 @@ spec:
 ### Sidecar container
 
 ```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app.kubernetes.io/name: nginx
+spec:
+  containers:
+    - name: nginx
+      image: nginx:latest
+      volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx
+    - name: nginx-exporter
+      image: nginx/nginx-prometheus-exporter:latest
+      args:
+        - --nginx.scrape-uri=http://localhost/stub_status
+  volumes:
+    - name: nginx-config
+      configMap:
+        - name: nginx-config
+```
+
+```bash
+kubectl expose pod nginx --port 9113 --type NodeProt
+```
+
+```yaml
 spec:
   initContainers:
     - name: <init-container-name>
@@ -216,6 +244,25 @@ spec:
 ```bash
 kubectl run ephemeral --image=registry.k8s.io/pause:latest --restart=Never
 kubectl debug -it ephemaral --image=busybox:latest --target=nginx
+```
+
+### Security Context
+
+```yaml
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+```
+
+```yaml
+spec:
+  containers:
+    - name: nginx
+      image: nginx:latest
+      securityContext:
+        privilaged: true
 ```
 
 ## Controllers
@@ -871,6 +918,33 @@ spec:
           command: ["command"]
 ```
 
+**sidecar problem with job resource**
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: <job-name>
+spec:
+  activeDeadlineSeconds:30
+  backoffLimit: 3 
+  ttlSecondsAfterFinished: 30
+  parallelism: 3
+  completions: 1
+  template:
+  	restartPolicy: Never # Never or OnFailure
+    spec:
+      initContainers:
+        - name: proxy
+          image: alpine:latest
+          command: ["sleep", "infinity"]
+          restartPolicy: Always
+      containers:
+        - name: <container-name>
+          image: <container-image>
+          command: ["command"]
+```
+
 ## CronJob
 
 **concurrencyPolicy**: If a job was running, would it allow a new job to run or not?
@@ -898,3 +972,142 @@ spec:
               image: <container-image>
               command: ["your command"]
 ```
+
+## Kubernetes Scheduler
+
+It selects the best node that the pod can run on and includes a series of parameters that we can adjust.
+
+scheduling happens in a series of stages that are exposed through following extension points:
+
+-  queueSort
+- preFilter
+- filter
+- postFilter
+- preScore
+- score
+- reverse
+- permit
+- preBind
+- bind
+- postBind
+- multiNode
+
+for each extension point, you could disable specific default plugins or enable your own. for example: 
+
+```yaml
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+profiles:
+  - plugins:
+      score:
+        disabled:
+          - name: PodTopologySpread
+        enabled:
+          - name: MyClusterPluginA
+            weight: 2
+          - name: MyClusterPluginB
+            weight: 1
+```
+
+There are already a series of plugins in the system, the details of which are listed on the Kubernetes official page, such as **ImageLocality**, **TaintToleration**, etc, which if we give more weight to each one, its scoring priority will increase.
+
+We can also tune the performance (**Scheduler Performance Tuning**)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <pod-name>
+spec:
+  nodeName: <node-name>
+  containers:
+    - name: <container-name>
+      image: <container-image>
+```
+
+```bash
+kubectl label nodes <node-name> topology.kubernetes.io/zone=zone1
+kubectl get nodes -L topology.kubernetes.io/zone
+```
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <pod-name>
+spec:
+  nodeSelector:
+    topology.kubernetes.io/zone: zone1
+  containers:
+    - name: <container-image>
+      image: <container-image>
+```
+
+**Affinity**
+
+- nodeAffinity
+- podAffinity
+- podAntiAffinity
+
+2 type:
+
+- preferred
+- required
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <deployment-name>
+  labels:
+    app.kubernetes.io/name: <deployment-name>
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: <pod-name>
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: <pod-name>
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringShedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - zone1
+                  - zone2
+      containers:
+        - name: <container-name>
+          image: <container-image>
+```
+
+```yaml
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringShedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExperssions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - zone1
+                  - zone4
+```
+
+```yaml
+spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoreDuringExecution:
+        - topologyKeys: topology.kubernetes.io/zone
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: <pod-labels>
+```
+
