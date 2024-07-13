@@ -297,7 +297,7 @@ stringData:
 
 **package**
 
-```
+```bash
 helm package testapp
 helm repo index
 ```
