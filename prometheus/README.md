@@ -454,7 +454,7 @@ scrape_configs:
     file_sd_configs:
       - files:
           - "*.josn"
-    relabel_configs:
+    relabel_configs: # before scrape
       - source_labels: [team]
         regex: infra|monitoring
         action: keep
@@ -476,5 +476,189 @@ scrape_configs:
       - regex: __meta_ec2_public_tag_monitor_(.*)
         replacement: ${1}
         action: lablemap
+    metric_relabel_configs: # after scrape
+      - source_labels: [__name__]
+        regex: http_request_size_bytes
+        action: drop
+      - regex: 'node_.*'
+        action: labeldrop #labelkeep
+```
+
+# Docker
+
+**cadvisor**
+
+```bash
+docker run --volume=/:/rootfs:ro --volume=/var/run:var/run:rw --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --volume=/dev/disk:/dev/disk:ro --publish=8080:8080 --detach=true --name=cadvisor gcr.io/cadvisor/cadvisor
+```
+
+```yaml
+scrape_configs:
+  - job: cadvisor
+    static_configs:
+      - targets: [192.168.1.100:8080]
+    metric_relabel_configs:
+      - source_labels: [__name__,image]
+        regex: container.*;()
+        action: drop
+      - regex: id
+        action: labeldrop
+        
+```
+
+**docker service discovery**
+
+```bash
+# /usr/lib/systemd/system
+ExecStart=/usr/bin/dockerd -H tcp://0.0.0.0:2375 -containerd=/run/containerdcontainerd.sock
+# OR
+# /etc/docker/daemon.json
+{
+	hosts: ["0.0.0.0:2375"]
+}
+```
+
+```bash
+systemctl daemon-reload
+systemctl restart docker
+ss -pentaul
+```
+
+```yaml
+static_configs:
+  - job: docker_service_discovery
+    docker_sd_configs:
+      - host: tcp://192.168.1.100:2375
+    relabel_configs:
+      - source_labels: [__meta_docker_port_private]
+        regex: ()
+        action: drop
+      - source_labels: [__addres__]
+        regex: .+:([0-9].+)
+        action: replace
+        replacement: 192.168.1.100:${1}
+        target_label: __adddress__
+      - regex: __meta_docker_container_(name)
+        replacement: ${1}
+        action: labelmap
+      - source_labels: [name]
+        regex: /(.+)
+        replacement: ${1}
+        target_label: name
+      - regex: container_label_maintainer|id
+        action: labeldrop
+```
+
+# Kubernetes
+
+```
+
+```
+
+# Alerting
+
+`/etc/prometheus/rules.yml`
+
+```yaml
+groups:
+  - name: node_exporter_rules
+    rules:
+      - record: cpu:node_cpu_seconds_total:utilization
+        expr: sum without(mode)(rate(node_cpu_seconds_total{mode!=idel}[1m])) / sum without(mode)(rate(node_cpu_seconds_total[1m])) * 100
+      - record: job:up:avg
+        expr: avg(up{job=~.*}) * 100
+      - record: instance:up
+        expr: up
+        labels:
+          severity: high
+      - alert: some instances are down
+        expr: job:up:avg > 70 < 100 and on() hour() > 4 < 5
+        labels:
+          severity: avarage
+          vendor: tata
+      - alert: not connected instance
+        expr: instance:up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: monitoring
+        annotaions:
+          summery: Target are not responding
+          Description: Severity {{ $labels.severity }}
+```
+
+`/etc/prometheus/prometheus.yml`
+
+```yaml
+global:
+  external_labels:
+    - dc: tehran
+rule_files:
+  - rules.yml
+```
+
+# Alertmanager
+
+```bash
+cp alertmanager /usr/local/bin
+cp amtool /usr/local/bin
+cp alertmanager.yml /etc/alertmanager/
+useradd -rs /sbin/nologin -M alertmanager
+chown -R alertmanger: /etc/alertmanger
+mkdir /var/lib/alertmanager/data
+chown -R alertmanger: /var/lib/alertmanager
+```
+
+```bash
+[Unit]
+Description=Alert Manage
+After=prometheus.service network.target
+
+[Service]
+User=alertmanager
+Group=alertmanager
+Type=simple
+ExecStart=/usr/bin/alertmanager \
+--config-file=/etc/alertmanager/alertmanager.yml \
+--storage.path=/var/lib/alertmanager/data
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```yaml
+global:
+  smtp_smarthost: 192.168.1.101:25
+  smtp_from: tata@prometheus.com
+  smtp_require_tls: false
+  
+route:
+  routes:
+    - matchers:
+        - severity: high
+      receiver: hamid
+    - matchers:
+        - team =~ tehran|tabriz
+receivers:
+  - name: default
+    email_configs:
+      - to: noc@prometheus.tata
+        require_tls: flase
+  - nema: hamid
+    email_configs:
+      - to: darani.h@tiddev.com
+    telegram_configs:
+      - bot_token: ...
+        chat_id: ...
+```
+
+`/etc/prometheus/prometheus.yml`
+
+```yml
+alerting:
+  alertmanager:
+    - static_configs:
+        - targets:
+            - localhost:9093
 ```
 
