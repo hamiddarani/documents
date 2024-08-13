@@ -551,8 +551,33 @@ static_configs:
 
 # Kubernetes
 
+```yaml
+scrape_configs:
+  - job_name: kubernetes-node
+    scheme: https
+    kubernetes_sd_configs:
+      - role: node
+    tls_config:
+      insecure_skip_verify: yes
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  - job_name: kubernetes-cadvisor
+    scheme: https
+    kubernetes_sd_configs:
+      - role: node
+    tls_config:
+      insecure_skip_verify: yes
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    authorization:
+      credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    
 ```
 
+```bash
+# find ca path
+kubectl exec -it <prometheus-pod> sh
+find / -name ca.crt 2>/dev/null
 ```
 
 # Alerting
@@ -633,12 +658,14 @@ global:
   smtp_require_tls: false
   
 route:
+  receiver: default
   routes:
     - matchers:
         - severity: high
       receiver: hamid
     - matchers:
-        - team =~ tehran|tabriz
+        - team =~ "tehran|tabriz"
+      receiver: manager
 receivers:
   - name: default
     email_configs:
@@ -662,3 +689,4 @@ alerting:
             - localhost:9093
 ```
 
+# Thanos
