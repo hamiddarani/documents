@@ -79,6 +79,165 @@ systemctl status keepalived
 
 # install kubernetes
 
+**steps**
+
+- provision the VMs
+- select and install cre (containerd,...) on all nodes
+- install kubeadm, kubectl, kublet on all node
+- initialize the cluster (on the master node only)
+- apply a CNI (calico or flannel) on cluster
+- join worker nodes on the cluster
+
+**install containerd**
+
+```bash
+https://github.com/containerd/containerd
+
+wget https://github.com/containerd/containerd/releases/download/v1.7.20/containerd-1.7.20-linux-amd64.tar.gz
+
+tar -zxvf containerd-1.7.20-linix-amd.tar.gz
+```
+
+`/usr/bin/systemd/system/containerd.service`
+
+```bash
+[Unit]
+Description=containerd container runtime
+Documentation=https://containerd.io
+After=network.target local-fs.target
+
+[Service]
+ExecStartPre=-/sbin/modprobe overlay
+ExecStart=/usr/local/bin/containerd
+
+Type=notify
+Delegate=yes
+KillMode=process
+Restart=always
+RestartSec=5
+
+LimitNPROC=infinity
+LimitCORE=infinity
+
+TasksMax=infinity
+OOMScoreAdjust=-999
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now containerd.service
+systemctl start containerd.service
+```
+
+**install runc**
+
+```bash
+https://github.com/opencontainers/runc
+wget https://github.com/opencontainers/runc/releases/download/v1.1.13/runc.amd64
+install -m 755 runc.amd64 /usr/local/sbin/runc
+```
+
+**install cni**
+
+```bash
+mkdir -p /opt/cni/bin
+https://github.com/containernetworking/plugins
+
+wget https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz
+
+tar -zxvf cni-plugin-linux-amd64-v1.5.1.tgz -C /opt/cni/bin
+```
+
+**generate containerd config**
+
+```bash
+mkdir -p /etc/containerd
+
+containerd config default | sudo tee /etc/containerd/config.toml
+
+vim config.toml
+[pluggins."io.containerd.grpc.v1.cri".containerd.runtime.runc]
+  SystemdCgroup = true
+
+[pluggins."io.containerd.grpc.v1.cri".containerd.runtime.runc.options]
+  SystemCgroup = true
+```
+
+```bash
+systemctl restart containerd.service
+```
+
+**install kubeadm, kublet, kubectl**
+
+```bash
+sudo apt-get update
+sudo apt install -y apt-transport-https ca-certificates curl
+
+mkdir -m 755 /etc/apt/keyrings #ubuntu 20.04
+
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.27/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.27/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+```
+
+```bash
+# sysctl params required by setup, params persist across reboots
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.ipv4.ip_forward = 1
+EOF
+
+# Apply sysctl params without reboot
+sudo sysctl --system
+
+kubeadm init --pod-network-cidr=10.10.0.0/16  --apiserver-advertise-address="<master-node-ip>" --kubernetes-version=<k8s-version> # use shekan or 403
+
+--image-repository=<private-registry-address> # if you have private registry
+
+kubectl token list
+```
+
+**install calico**
+
+```bash
+https://www.tigera.io/project-calico/
+https://docs.tigera.io/calico/latest/getting-started/kubernetes/quickstart
+
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.1/manifests/tigera-operator.yaml
+
+kubectl get pod -n tigera-operator
+
+wget https://raw.githubusercontent.com/projectcalico/calico/v3.28.1/manifests/custom-resources.yaml
+
+nano custom-resource.yaml
+calicoNetwork:
+  ipPools:
+    cidr: 10.10.0.0/16
+
+kubectl apply -f custom-resource.yaml
+
+kubectl get pod -n calico-system
+
+kubectl label node <node-name> kubernetes.io/role=worker
+```
+
+```bash
+# reinitial
+kubeadm reset
+rm -rf /etc/kubernetes
+rm -rf ~/.kube
+rm -rf /var/lib/kubelet
+rm -rf /var/lib/cni
+rm -rf /etc/cni
+rm -rf /var/lib/etcd
+```
+
 `master 1`
 
 ```bash
@@ -205,7 +364,12 @@ kubeadm init --config kube-config.yaml --upload-cert
 # generate new certs
 kubeadm certs renew all
 
-kubeadm token create --show-join-command # create new <token> and show worker join command
+kubeadm token create --show-join-command --ttl 2h# create new <token> and show worker join command
+kubeadm token list
+
+# show existant certificate hash with openssl
+openssl -x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outfrom der 2>/dev/null | openssl dgst -sha256 -hex | sed '/^.* //'
+
 kubeadm init phase upload-certs --upload-certs # create new <certificate-key> 
 
 kubeadm join <virtual-ip>:6443 --token="<token>" --discovery-token-ca-cert-hash sha256:... --control-plane --certificate-key <certificate-key>
@@ -291,5 +455,157 @@ metadata:
   name: <serviceaccount-name>
   namespace: <namespace-name>
 automountServiceAccountToken: true
+```
+
+```bash
+kubectl create token <service-account> --duration <duration>
+```
+
+```yaml
+spec:
+  serviceAccountName: <serviceaccount-name>
+  containers:
+    - name: <container-name>
+      image: <container-image>
+      volumeMounts:
+        - name: token-vol
+          mountPath: /var/run/secrets/tokens
+        - name: ca-vol
+          mountPath: /var/run/secrets/certs.crt
+  volumes: # if automountServiceAccountToken: false
+    - name: token-vol
+      projected:
+        sources:
+          - serviceAccountToken:
+              path: vault-token
+              expirationSeconds: 7200
+    - name: ca-vol
+      hostPath:
+        path: /etc/kubernetes/pki/ca.crt
+```
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: <pod-name>
+spec:
+  initContainers:
+    - name: alpine-container
+      image: alpine:latest
+      volumeMounts:
+        - name: token-vol
+          mountPath: /var/run/secrets/tokens
+      command:
+        - /bin/bash
+        - -c
+        - |
+          apk add curl
+          TOKEN=$(cat /var/run/secrets/tokens/vault-token)
+          curl -X POST -k \
+          https://kubernetes:6443/api/v1/namespace/<namespace-name>/configmaps \
+          -H 'Authorization Bearer $(TOKEN)' \
+          -H 'Content-Type application/json' \
+          -d '{
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+              "name": "hamid",
+              "namespace": "hamid"
+            },
+            "data": {
+              "key1": "value1",
+              "key2": "value2"
+             }
+           }'
+  containers:
+    - name: <container-name>
+      image: <container-image>
+    
+```
+
+**HPA**
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.1/components.yaml
+
+kubectl get pods -n kube-system
+
+kubectl edit deployments.app metric-server -n kube-system
+
+args:
+  - --kubelet-insecure-tls
+```
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizentalPodAutoscaler
+metadata:
+  name: <hpa-name>
+spec:
+  behavior:
+    scaleUp:
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 5
+          periodSeconds: 50
+      selectPolicy: Max # Min
+    scaleDown:
+      policies:
+        - type: Pods
+          value: 1
+          peridSeconds: 600
+  scaleTargetRef: 
+    apiVersion: apps/v1
+    kind: Deployment
+    name: <deployment-name>
+  minreplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: 
+          type: Utilization
+          averageUtilization: 50
+```
+
+**VPA**
+
+```bash
+git clone https://github.com/kubernetes/autoscaler.git
+./hack/vpa-up.sh
+```
+
+```yaml
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: <vpa-name>
+  namespace: <namespace-name>
+spec:
+  targetRef:
+    apiVersion: "apps/v1"
+    kind: Deployment
+    name: <deployment-name>
+  updatePolicy:
+    updateMode: "off" #just prefer me | "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: <container-name>
+        minAllow:
+          cpu: "250"
+          memory: "100Mi"
+        maxAllow:
+          cpu: "1000"
+          memory: "600Mi"
+```
+
+```bash
+######################Reccomandation#####################
+kubectl describe vpa <vpa-name>
 ```
 
