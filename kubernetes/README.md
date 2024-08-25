@@ -119,6 +119,8 @@ spec:
     - name: nginx
       image: nginx:alpine
       command: ["false"] # CrashLoopBackoff
+      imagePullPolicy: IfNotPresent # Never|Always
+  restartPolicy: Never
 ```
 
 ```bash

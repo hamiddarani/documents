@@ -238,6 +238,12 @@ rm -rf /etc/cni
 rm -rf /var/lib/etcd
 ```
 
+`/etc/kubernetes/manifests`
+
+```bash
+kubectl exec etcd-master1 -n kube-system -- etcdctl get / --cacert="/etc/kubernetes/pki/etcd/ca.crt" --cert="/etc/kubernetes/pki/etcd/server.crt" --key="/etc/kubernetes/pki/etcd/server.key" --prefix --keys-only
+```
+
 `master 1`
 
 ```bash
