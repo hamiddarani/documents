@@ -690,3 +690,157 @@ alerting:
 ```
 
 # Thanos
+
+- **Thanos Sidecar**: a proxy that runs alongside **Prometheus** and send metrics data to **Thanos**.
+- **Thanos Store**: a distributed storage layer for metrics data that uses object storage like S3 or GCS.
+- **Thanos Query**: a query engine that allows you to query metrics data stored in **Thanos Store**.
+
+Thanos provides several key benefits over using Prometheus alone , including:
+
+-   **Scalability**: Thanos allows you to scale your metrics storage horizontally a vertically, enabling you to handle large volumes of metrics data.
+- **High avalibility**: Thanos provides a highly available storage layer for metrics data, reducing the risks of data loss and downtime.
+- **long-term retention**: Thanos allows you to retain metrics data for long periods of time, without the need for complex backup and restore processes.
+
+**The components include**: Prometheus, Thanos Sidecar, Thanos Store, Thanos Query, Thanos Compactor, Thanos Receiver
+
+## Get started
+
+install prometheus
+
+```toml
+[Unit]
+Description=Prometheus server
+Wants=network-online.target
+After=network-online.target
+[Service]
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/prometheus \
+--config.file /etc/prometheus/prometheus.yml \
+--storage.tsdb.path /var/lib/prometheus \
+--web.console.templates=/etc/prometheus/consoles \
+--web.console.libraries=/etc/prometheus/console_libraries \
+--storage.tsdb.max-block-duration=10m \
+--storage.tsdb.min-block-duration=10m \
+ExecReload=/usr/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=60s
+[Install]
+WantedBy=multi-user.target
+```
+
+```yaml
+global:
+  scrape_interval: 10s
+  evaluation_interval: 15s
+  external_labels:
+  	cluster: tehran
+  	replica: Prometheus-Tehran
+scrape_configs:
+  - job_name: Prometheus
+    scrape_interval: 5s
+    static_configs: ['127.0.0.1:9090']
+```
+
+```tex
+wget https://github.com/thanos-io/thanos/releases/download/v0.36.1/thanos-0.36.1.linux-arm64.tar.gz
+
+tar -zxvf thanos
+cd thanos
+cp thanos /usr/local/bin
+mkdir /etc/thanos
+mkdir /var/lib/thanos
+```
+
+```yaml
+# nano bucket.yaml
+type: FILESYSTEM
+config:
+  directory: /var/lib/thanos
+```
+
+```toml
+# thanos-sidecar.service
+[Unit]
+Description=Thanos Sidecar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/thanos sidecar \
+  --prometheus.url=http://127.0.0.1:9090 \
+  --grpc-address=0.0.0.0:10901 \
+  --http-address=0.0.0.0:10902 \
+  --tsdb.path /var/lib/prometheus/ \
+  --objstore.config-file /etc/thanos/bucket.yaml
+ExecReload=/bin/kill -HUB $MAINPID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+install go
+
+------
+
+thanos store
+
+```bash
+dnf install nfs-utils
+```
+
+```toml
+# thanos-store
+# thanos-sidecar.service
+[Unit]
+Description=Thanos Sidecar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=thanos
+Group=thanos
+Type=simple
+ExecStart=/usr/local/bin/thanos store \
+  --data.dir=/var/lib/thanos \
+  --grpc-address=0.0.0.0:10905 \
+  --http-address=0.0.0.0:10906 \
+  --objstore.config-file /etc/thanos/bucket.yaml
+ExecReload=/bin/kill -HUB $MAINPID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```toml
+# thanos-query
+# thanos-sidecar.service
+[Unit]
+Description=Thanos Sidecar
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=thanos
+Group=thanos
+Type=simple
+ExecStart=/usr/local/bin/thanos query \
+  --data.dir=/var/lib/thanos \
+  --grpc-address=0.0.0.0:10901 \
+  --http-address=0.0.0.0:29090 \
+  --objstore.config-file /etc/thanos/bucket.yaml
+  --endpoint=thanos-store:10905
+  --endpoint=prometheus-server:10901
+  --query.replica-label cluster
+ExecReload=/bin/kill -HUB $MAINPID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
